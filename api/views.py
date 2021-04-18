@@ -1,182 +1,227 @@
-from django.contrib.auth.models import User
-from api.serializers import FavoriteSerializer, RecipeCategorySerializer, CategorySerializer, CommentSerializer, IngredientSerializer, RatingSerializer, RecipeIngredientSerializer, RecipeSerializer, StepSerializer, UserSerializer
-from api.models import Category, Comment, Favorite, Ingredient, Rating, Recipe, RecipeCategory, RecipeIngredient, Step
-from django.shortcuts import render
-from rest_framework import viewsets, status
+from django.contrib.auth import login, logout as django_logout
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import IntegrityError
+from rest_framework import viewsets, status, mixins, serializers
+from rest_framework.authentication import BasicAuthentication
+from rest_framework.decorators import action, authentication_classes, api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.decorators import action
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated, AllowAny
-import json
+from rest_framework.viewsets import ViewSet, GenericViewSet
+from rest_framework_simplejwt.tokens import RefreshToken
 
-# Create your views here.
+from api.models import Category, Comment, Favorite, Ingredient, Rating, Recipe, RecipeIngredient, Step, \
+    User, Unit
+from api.permissions import IsAdminOrIsOwnerOrSingup, IsAdminOrReadOnly, IsOwnerOrCreateOrReadOnly, \
+    IsAdminOrCreateOrReadOnly, IsOwnerRecipeOrCreateOrReadOnly
+from api.serializers.ingredient import IngredientSerializer, IngredientDisplaySerializer
+from api.serializers.recipe import RecipeSerializer, RecipeDisplaySerializer
+from api.serializers.recipe_ingredient import RecipeIngredientSerializer, RecipeIngredientUpdateSerializer
+from api.serializers.serializers import FavoriteSerializer, RatingSerializer, CategorySerializer, StepSerializer, \
+    CommentSerializer
+from api.serializers.unit import UnitSerializer
+from api.serializers.user import UserSerializer
+
+
+class AuthenticationView(ViewSet):
+    permission_classes = (IsAuthenticated,)
+
+    @authentication_classes([BasicAuthentication, ])
+    def login(self, request, *args, **kwargs):
+        refresh = RefreshToken.for_user(request.user)
+        serializer = UserSerializer(request.user)
+        login(request=request, user=request.user)
+        return Response({
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'username': serializer.data['username'],
+            'email': serializer.data['email']
+        })
+
+    def logout(self, request, *args, **kwargs):
+        django_logout(request)
+        return Response({'message': 'Successfully logged out!'})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, ])
+def get_mine_favourites(request):
+    user = request.user
+    favourites = Favorite.objects.filter(user_id=user.id)
+    serialized = FavoriteSerializer(favourites, many=True)
+    return Response(serialized.data)
+
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+    permission_classes = (IsAdminOrIsOwnerOrSingup,)
+
 
 class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
     serializer_class = RecipeSerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
+    permission_classes = (IsAuthenticated, IsOwnerOrCreateOrReadOnly)
 
-    @action(detail=True, methods=['POST'])
-    def rate_recipe(self, request, pk=None): 
-        if 'stars' in request.data:
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
-            recipe = Recipe.objects.get(id=pk)
-            stars = request.data['stars']
-            user = request.user
+    def get_serializer_class(self):
+        if self.action == 'retrieve' or self.action == 'list':
+            return RecipeDisplaySerializer
+        return RecipeSerializer
 
-            try:
-                rating = Rating.objects.get(user=user.id, recipe=recipe.id)
-                rating.stars = stars
-                rating.save()
-                serializer = RatingSerializer(rating, many=False)
-                response = {'message': 'Rating updated', 'result': serializer.data}
-                return Response(response, status=status.HTTP_200_OK)
-            except: 
-                rating = Rating.objects.create(user=user, recipe=recipe, stars=stars)
-                serializer = RatingSerializer(rating, many=False)
-                response = {'message': 'Rating created', 'result': serializer.data}
-                return Response(response, status=status.HTTP_200_OK)
-
-        else:
-            response = {'message': 'You need to provide stars'}
-            return Response(response, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(detail=True, methods=['POST'])
-    def add_categories(self, request, pk=None): 
-        if 'categories' in request.data:
-
-            recipe = Recipe.objects.get(id=pk)
-            categories = request.data['categories']
-
-            for category in categories:
-                try:
-                    existingCategory = Category.objects.get(name=category)
-                    recipe.categories.add(existingCategory)
-                    recipe.save()
-                except: 
-                    newCategory = Category.objects.create(name=category)
-                    newCategory.save()
-                    recipe.categories.add(newCategory)
-                    recipe.save()
-                    # serializer = CategorySerializer(newCategory, many=False)
-                    # serializerRecipe = RecipeSerializer(recipe, many=False)
-                    # response = response.add({'message': 'Rating created', 'result': serializer.data, 'res2': serializerRecipe.data})
-            return Response({'message': 'GUT'}, status=status.HTTP_200_OK)
-        else:
-            response = {'message': 'You need to provide stars'}
-            return Response(response, status=status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=True, methods=['POST'])
-    def add_ingredients(self, request, pk=None): 
-        if 'ingredients' in request.data:
-
-            recipe = Recipe.objects.get(id=pk)
-            ingredients = request.data['ingredients']
-
-            for ingredient in ingredients:
-                try:
-                    existingIngredient = Ingredient.objects.get(name=ingredient['name'])
-                    existingRecipeIngredient = RecipeIngredient.objects.get(ingredient=existingIngredient, quantity=ingredient['quantity'], unit=ingredient['unit'])
-                    recipe.ingredients.add(existingRecipeIngredient)
-                    recipe.save()
-                except RecipeIngredient.DoesNotExist:
-                    print('hello 3', existingIngredient)
-                    newRI = RecipeIngredient.objects.create(ingredient = existingIngredient, quantity=ingredient['quantity'], unit=ingredient['unit'])
-                    newRI.save()
-                    recipe.ingredients.add(newRI)
-                    recipe.save()
-                except Ingredient.DoesNotExist: 
-                    newIg = Ingredient.objects.create(name=ingredient['name'])
-                    newIg.save()
-                    newRI = RecipeIngredient.objects.create(ingredient=newIg, quantity=ingredient['quantity'], unit=ingredient['unit'])
-
-                    newRI.save()
-                    recipe.ingredients.add(newRI)
-                    recipe.save()
-            return Response({'message': 'GUT'}, status=status.HTTP_200_OK)
-        else:
-            response = {'message': 'You need to provide stars'}
-            return Response(response, status=status.HTTP_400_BAD_REQUEST)
-
-class RatingViewSet(viewsets.ModelViewSet):
-    queryset = Rating.objects.all()
-    serializer_class = RatingSerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
-
-    def update(self, request, *args, **kwargs):
-        response = {'message': 'You cant update rating like that'}
-        return Response(response, status=status.HTTP_400_BAD_REQUEST)
-    
     def create(self, request, *args, **kwargs):
-        response = {'message': 'You cant create rating like that'}
-        return Response(response, status=status.HTTP_400_BAD_REQUEST)
+        categories = request.data.get('categories')
+        ingredients = request.data.get('ingredients')
+        steps = request.data.get('steps')
 
-class FavoriteViewSet(viewsets.ModelViewSet):
-    queryset = Favorite.objects.all()
-    serializer_class = FavoriteSerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
+        if len(categories) == 0:
+            return Response({"error": "Recipe is required to have at least one category!"},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-    def update(self, request, *args, **kwargs):
-        response = {'message': 'You cant update rating like that'}
-        return Response(response, status=status.HTTP_400_BAD_REQUEST)
-    
-    def create(self, request, *args, **kwargs):
-        response = {'message': 'You cant create rating like that'}
-        return Response(response, status=status.HTTP_400_BAD_REQUEST)
+        if len(ingredients) == 0:
+            return Response({"error": "Recipe is required to have at least one ingredient!"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(steps) == 0:
+            return Response({"error": "Recipe is required to have at least one step!"},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-    
-    @action(detail=True, methods=['GET']) 
-    def mine(self, request, pk=None):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=True, methods=['POST'])
+    def rate(self, request, pk=None):
+        if 'stars' not in request.data:
+            response = {'error': 'You need to provide stars!'}
+            return Response(response, status=status.HTTP_400_BAD_REQUEST)
+
+        recipe = self.get_object()
+        stars = request.data['stars']
         user = request.user
-        print('USER', user);
+
+        try:
+            rating = Rating.objects.get(user=user.id, recipe=recipe.id)
+            data_to_change = {'stars': stars}
+            serializer = RatingSerializer(rating, data=data_to_change, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Rating.DoesNotExist:
+            data = {'stars': stars}
+            serializer = RatingSerializer(data=data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save(user=user, recipe=recipe)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['POST'])
+    def favourite(self, request, pk=None):
+        recipe = self.get_object()
+        user = request.user
+        data = {'recipe': recipe.id, 'user': user.id}
+        serializer = FavoriteSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
+    permission_classes = (IsAuthenticated, IsAdminOrReadOnly)
 
-    # def update(self, request, *args, **kwargs):
-    #     response = {'message': 'You cant update rating like that'}
-    #     return Response(response, status=status.HTTP_400_BAD_REQUEST)
-    
-    # def create(self, request, *args, **kwargs):
-    #     response = {'message': 'You cant create rating like that'}
-    #     return Response(response, status=status.HTTP_400_BAD_REQUEST)
+
+class UnitViewSet(viewsets.ModelViewSet):
+    queryset = Unit.objects.all()
+    serializer_class = UnitSerializer
+    permission_classes = (IsAuthenticated, IsAdminOrReadOnly)
+
 
 class IngredientViewSet(viewsets.ModelViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
+    permission_classes = (IsAuthenticated, IsAdminOrCreateOrReadOnly)
 
-class CommentViewSet(viewsets.ModelViewSet):
-    queryset = Comment.objects.all()
-    serializer_class = CommentSerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
+    def get_serializer_class(self):
+        if self.action == 'retrieve' or self.action == 'list':
+            return IngredientDisplaySerializer
+        return IngredientSerializer
 
-class RecipeIngredientViewSet(viewsets.ModelViewSet):
+
+class RecipeIngredientViewSet(mixins.CreateModelMixin,
+                              mixins.UpdateModelMixin,
+                              mixins.RetrieveModelMixin,
+                              mixins.DestroyModelMixin,
+                              GenericViewSet):
     queryset = RecipeIngredient.objects.all()
     serializer_class = RecipeIngredientSerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
+    permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)
 
-class RecipeCategoryViewSet(viewsets.ModelViewSet):
-    queryset = RecipeCategory.objects.all()
-    serializer_class = RecipeCategorySerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
+    def get_serializer_class(self):
+        if self.action == 'update' or self.action == 'partial_update':
+            return RecipeIngredientUpdateSerializer
+        return RecipeIngredientSerializer
 
-class StepViewSet(viewsets.ModelViewSet):
+    def create(self, request, *args, **kwargs):
+        rci_id = self.kwargs.get('pk')
+        try:
+            recipe = Recipe.objects.get(id=rci_id)
+        except ObjectDoesNotExist:
+            raise serializers.ValidationError('Recipe with id = ' + str(rci_id) + ' dose not exists.')
+        data = request.data
+        data['recipe'] = recipe.id
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class StepViewSet(mixins.CreateModelMixin,
+                  mixins.UpdateModelMixin,
+                  mixins.RetrieveModelMixin,
+                  mixins.DestroyModelMixin,
+                  GenericViewSet):
     queryset = Step.objects.all()
     serializer_class = StepSerializer
-    authentication_classes = (TokenAuthentication, )
-    permission_classes = (IsAuthenticated, )
+    permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)
+
+    def create(self, request, *args, **kwargs):
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except IntegrityError:
+            return Response({"error": "There is already such a step in this recipe!"}, status=status.HTTP_400_BAD_REQUEST)
+
+    def perform_create(self, serializer):
+        rci_id = self.kwargs.get('pk')
+        try:
+            recipe = Recipe.objects.get(id=rci_id)
+            if recipe:
+                serializer.save(recipe=recipe)
+        except ObjectDoesNotExist:
+            raise serializers.ValidationError('Recipe with id = ' + str(rci_id) + ' dose not exists.')
+
+
+class CommentViewSet(mixins.CreateModelMixin,
+                     mixins.UpdateModelMixin,
+                     mixins.RetrieveModelMixin,
+                     mixins.DestroyModelMixin,
+                     GenericViewSet):
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer
+    permission_classes = (IsAuthenticated, IsOwnerOrCreateOrReadOnly)
+
+    def perform_create(self, serializer):
+        rci_id = self.kwargs.get('pk')
+        try:
+            recipe = Recipe.objects.get(id=rci_id)
+            if recipe:
+                serializer.save(user=self.request.user, recipe=recipe)
+        except ObjectDoesNotExist:
+            raise serializers.ValidationError('Recipe with id = ' + str(rci_id) + ' dose not exists.')

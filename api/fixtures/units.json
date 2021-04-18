@@ -1,0 +1,50 @@
+[
+  {
+    "model": "api.Unit",
+    "pk": 1,
+    "fields": {
+      "full": "gram",
+      "short": "g"
+    }
+  },
+   {
+    "model": "api.Unit",
+    "pk": 2,
+    "fields": {
+      "full": "kilogram",
+      "short": "kg"
+    }
+  },
+   {
+    "model": "api.Unit",
+    "pk": 3,
+    "fields": {
+      "full": "piece",
+      "short": "pc"
+    }
+  },
+   {
+    "model": "api.Unit",
+    "pk": 4,
+    "fields": {
+      "full": "tablespoon",
+      "short": "tbsp"
+    }
+  },
+   {
+    "model": "api.Unit",
+    "pk": 5,
+    "fields": {
+      "full": "teaspoon",
+      "short": "tsp"
+    }
+  },
+   {
+    "model": "api.Unit",
+    "pk": 6,
+    "fields": {
+      "full": "pinch",
+      "short": "pi"
+    }
+  }
+]

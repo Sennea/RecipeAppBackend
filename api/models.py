@@ -1,70 +1,70 @@
-from django.db import models
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AbstractUser
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.core.files.storage import FileSystemStorage
-from django.conf import settings
-# Create your models here.
+from django.db import models
 
-class Category(models.Model): 
-    name = models.CharField(max_length=150, blank=False, unique=True);
+
+class User(AbstractUser):
+    email = models.EmailField('email address', unique=True)
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
+
+    def __str__(self):
+        return "{}".format(self.email)
+
+
+class Category(models.Model):
+    name = models.CharField(max_length=150, unique=True)
 
     def __str__(self):
         return self.name
 
-class Ingredient(models.Model): 
-    name = models.CharField(max_length=150, blank=False)
-
-    def __str__(self):
-        return self.name
-
-
-class RecipeIngredient(models.Model):
-    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
-    quantity = models.FloatField(blank=False, null=True, default=0)
-    unit = models.CharField(max_length=30, null=True, blank=True, default = '')
-
-    def __str__(self):
-        if self.unit:
-            return  self.ingredient.name  + ' ' + str(self.quantity) + ' ' + self.unit
-        else:
-            return  self.ingredient.name  + ' ' + str(self.quantity)
-
-class Step(models.Model):
-    step = models.TextField(max_length=1500, blank=False);
-
-    def __str__(self):
-        return self.step[0: 20]
-
-LEVEL_CHOICES = (
-    ('intern','Intern'),
-    ('junior','Junior'),
-    ('mid','Mid'),
-    ('senior', 'Senior'),
-    ('architect', 'Architect'),
-)
 
 class Recipe(models.Model):
-    title = models.CharField(max_length=150, unique=True, blank=False)
-    description = models.TextField(max_length=1500, blank=False)
-    imageUrl = models.CharField(max_length=400, blank=False)
-    preparationTime = models.CharField(max_length=150, blank=False, default="")
-    level = models.CharField(max_length=15, choices=LEVEL_CHOICES, default='mid')
-    dateAdded = models.DateField(auto_now=True, blank=False, null=True)
+    NOVICE = 0
+    BEGINNER = 1
+    COMPETENT = 2
+    PROFICIENT = 3
+    EXPERT = 4
+    LEVEL_CHOICES = [
+        (NOVICE, 'novice'),
+        (BEGINNER, 'beginner'),
+        (COMPETENT, 'competent'),
+        (PROFICIENT, 'proficient'),
+        (EXPERT, 'expert'),
+    ]
+
+    SECONDS = 's'
+    MINUTES = 'm'
+    HOURS = 'h'
+    DAYS = 'd'
+    PREPARATION_TIME_UNIT_CHOICES = [
+        (SECONDS, 'seconds'),
+        (MINUTES, 'minutes'),
+        (HOURS, 'hours'),
+        (DAYS, 'days')
+    ]
+    user = models.ForeignKey(User, related_name='recipes', on_delete=models.SET_NULL, null=True)
+    title = models.CharField(max_length=150, unique=True)
+    description = models.TextField(max_length=1500)
+    imageUrl = models.CharField(max_length=400)
+    preparationTime = models.FloatField()
+    preparationTimeUnit = models.CharField(max_length=1, choices=PREPARATION_TIME_UNIT_CHOICES)
+    level = models.IntegerField(choices=LEVEL_CHOICES, default=COMPETENT)
+    dateAdded = models.DateField(auto_now=True)
     categories = models.ManyToManyField(Category)
-    ingredients = models.ManyToManyField(RecipeIngredient)
-    steps = models.ManyToManyField(Step)
 
     def no_of_rating(self):
         ratings = Rating.objects.filter(recipe=self)
         return len(ratings)
-    
+
     def avg_rating(self):
-        sum = 0
+        m_sum = 0
         ratings = Rating.objects.filter(recipe=self)
         for rating in ratings:
-            sum += rating.stars
+            m_sum += rating.stars
         if len(ratings) > 0:
-            return sum / len(ratings)
+            return m_sum / len(ratings)
         else:
             return 0
 
@@ -72,35 +72,95 @@ class Recipe(models.Model):
         return self.title
 
 
+GRAM = 'g'
+KILOGRAM = 'kg'
+PIECE = 'piece'
+TABLESPOON = 'tablespoon'
+TEASPOON = 'teaspoon'
+PINCH = 'pinch'
+UNIT_CHOICES = [
+    (GRAM, 'gram'),
+    (KILOGRAM, 'kilogram'),
+    (TABLESPOON, 'tablespoon'),
+    (TEASPOON, 'teaspoon'),
+    (PINCH, 'pinch'),
+    (PIECE, 'piece')
+]
 
-class RecipeCategory(models.Model):
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
+
+class Unit(models.Model):
+    full = models.CharField(max_length=50, unique=True)
+    short = models.CharField(max_length=25, unique=True)
+
+
+class Ingredient(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    imageUrl = models.CharField(max_length=400, blank=True, null=True)
+    quantity = models.FloatField(validators=[MinValueValidator(0)])
+    unit = models.CharField(max_length=25)
+    allowedUnits = models.ManyToManyField(Unit)
+    kcal = models.IntegerField(validators=[MinValueValidator(0)])
+    isActive = models.BooleanField(default=True)
 
     def __str__(self):
-        return  self.category.name + "  " + self.recipe.title
+        return self.name
 
 
-class Comment(models.Model): 
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, blank=True, null=True, default="") 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, default="") 
-    content = models.TextField(max_length=1500, blank=False, null=True)
-    dateAdded = models.DateField(auto_now=True, blank=False, null=True)
-    class Meta: 
+class RecipeIngredient(models.Model):
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
+    recipe = models.ForeignKey(Recipe, related_name='ingredients', on_delete=models.CASCADE)
+    quantity = models.FloatField()
+    unit = models.CharField(max_length=25)
+
+    class Meta:
+        unique_together = (('recipe', 'ingredient'),)
+
+    def __str__(self):
+        if self.unit:
+            return self.ingredient.name + ' ' + str(self.quantity) + ' ' + self.unit
+        else:
+            return self.ingredient.name + ' ' + str(self.quantity)
+
+
+class Step(models.Model):
+    recipe = models.ForeignKey(Recipe, related_name='steps', on_delete=models.CASCADE)
+    description = models.TextField(max_length=1500)
+    order = models.IntegerField(validators=[MinValueValidator(1)])
+    imageUrl = models.CharField(max_length=400, blank=True, null=True)
+
+    class Meta:
+        unique_together = (('recipe', 'order'),)
+
+    def __str__(self):
+        return self.description[0: 20]
+
+
+class Comment(models.Model):
+    user = models.ForeignKey(User, related_name='comments', on_delete=models.CASCADE)
+    recipe = models.ForeignKey(Recipe, related_name='comments', on_delete=models.CASCADE)
+    content = models.TextField(max_length=1500)
+    dateAdded = models.DateField(auto_now_add=True)
+    dateModified = models.DateField(auto_now=True)
+    isActive = models.BooleanField(default=True)
+
+    class Meta:
         index_together = (('user', 'recipe'),)
-        
+
 
 class Rating(models.Model):
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, blank=False, null=True)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, blank=False, null=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
     stars = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
-    class Meta: 
+
+    class Meta:
         unique_together = (('user', 'recipe'),)
         index_together = (('user', 'recipe'),)
 
+
 class Favorite(models.Model):
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, blank=False, null=True)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, blank=False, null=True)
-    class Meta: 
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE)
+
+    class Meta:
         unique_together = (('user', 'recipe'),)
         index_together = (('user', 'recipe'),)

@@ -1,5 +1,6 @@
-from api.models import Category, Comment, Favorite, Ingredient, Rating, Recipe, RecipeIngredient, Step
 from django.contrib import admin
+
+from api.models import Category, Comment, Favorite, Ingredient, Rating, Recipe, RecipeIngredient, Step
 
 # Register your models here.
 
