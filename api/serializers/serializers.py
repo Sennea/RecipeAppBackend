@@ -11,6 +11,14 @@ class StepSerializer(serializers.ModelSerializer):
         fields = ['id', 'recipe', 'description', 'order', 'imageUrl']
 
 
+class StepCreateSerializer(serializers.ModelSerializer):
+    recipe = serializers.PrimaryKeyRelatedField
+
+    class Meta:
+        model = Step
+        fields = ['id', 'recipe', 'description', 'order', 'imageUrl']
+
+
 class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:

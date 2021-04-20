@@ -1,6 +1,6 @@
 from django.contrib.auth import login, logout as django_logout
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework import viewsets, status, mixins, serializers
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import action, authentication_classes, api_view, permission_classes
@@ -17,7 +17,7 @@ from api.serializers.ingredient import IngredientSerializer, IngredientDisplaySe
 from api.serializers.recipe import RecipeSerializer, RecipeDisplaySerializer
 from api.serializers.recipe_ingredient import RecipeIngredientSerializer, RecipeIngredientUpdateSerializer
 from api.serializers.serializers import FavoriteSerializer, RatingSerializer, CategorySerializer, StepSerializer, \
-    CommentSerializer
+    CommentSerializer, StepCreateSerializer
 from api.serializers.unit import UnitSerializer
 from api.serializers.user import UserSerializer
 
@@ -69,28 +69,6 @@ class RecipeViewSet(viewsets.ModelViewSet):
         if self.action == 'retrieve' or self.action == 'list':
             return RecipeDisplaySerializer
         return RecipeSerializer
-
-    def create(self, request, *args, **kwargs):
-        categories = request.data.get('categories')
-        ingredients = request.data.get('ingredients')
-        steps = request.data.get('steps')
-
-        if len(categories) == 0:
-            return Response({"error": "Recipe is required to have at least one category!"},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        if len(ingredients) == 0:
-            return Response({"error": "Recipe is required to have at least one ingredient!"},
-                            status=status.HTTP_400_BAD_REQUEST)
-        if len(steps) == 0:
-            return Response({"error": "Recipe is required to have at least one step!"},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(detail=True, methods=['POST'])
     def rate(self, request, pk=None):
@@ -170,13 +148,26 @@ class RecipeIngredientViewSet(mixins.CreateModelMixin,
             recipe = Recipe.objects.get(id=rci_id)
         except ObjectDoesNotExist:
             raise serializers.ValidationError('Recipe with id = ' + str(rci_id) + ' dose not exists.')
+
         data = request.data
-        data['recipe'] = recipe.id
-        serializer = self.get_serializer(data=data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        is_many = isinstance(data, list)
+        with transaction.atomic():
+            try:
+                if not is_many:
+                    data['recipe'] = recipe.id
+                    serializer = self.get_serializer(data=data)
+                else:
+                    for rci in data:
+                        rci['recipe'] = recipe.id
+                    serializer = self.get_serializer(data=data, many=True)
+                serializer.is_valid(raise_exception=True)
+                self.perform_create(serializer)
+                headers = self.get_success_headers(serializer.data)
+                return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            except IntegrityError as e:
+                return Response({"error": "In the recipe there cannot be any recipe_ingredient with the same "
+                                          "ingredient.id!"},
+                                status=status.HTTP_400_BAD_REQUEST)
 
 
 class StepViewSet(mixins.CreateModelMixin,
@@ -188,24 +179,36 @@ class StepViewSet(mixins.CreateModelMixin,
     serializer_class = StepSerializer
     permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)
 
-    def create(self, request, *args, **kwargs):
-        try:
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-        except IntegrityError:
-            return Response({"error": "There is already such a step in this recipe!"}, status=status.HTTP_400_BAD_REQUEST)
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return StepCreateSerializer
+        return StepSerializer
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
         rci_id = self.kwargs.get('pk')
         try:
             recipe = Recipe.objects.get(id=rci_id)
-            if recipe:
-                serializer.save(recipe=recipe)
         except ObjectDoesNotExist:
             raise serializers.ValidationError('Recipe with id = ' + str(rci_id) + ' dose not exists.')
+
+        data = request.data
+        is_many = isinstance(data, list)
+        with transaction.atomic():
+            try:
+                if not is_many:
+                    data['recipe'] = recipe.id
+                    serializer = self.get_serializer(data=data)
+                else:
+                    for step in data:
+                        step['recipe'] = recipe.id
+                    serializer = self.get_serializer(data=data, many=True)
+                serializer.is_valid(raise_exception=True)
+                self.perform_create(serializer)
+                headers = self.get_success_headers(serializer.data)
+                return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            except IntegrityError as e:
+                return Response({"error": "In the recipe there cannot be any step with the same step.order number!"},
+                                status=status.HTTP_400_BAD_REQUEST)
 
 
 class CommentViewSet(mixins.CreateModelMixin,

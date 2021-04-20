@@ -48,7 +48,7 @@ class Recipe(models.Model):
     title = models.CharField(max_length=150, unique=True)
     description = models.TextField(max_length=1500)
     imageUrl = models.CharField(max_length=400)
-    preparationTime = models.FloatField()
+    preparationTime = models.FloatField(validators=[MinValueValidator(0)])
     preparationTimeUnit = models.CharField(max_length=1, choices=PREPARATION_TIME_UNIT_CHOICES)
     level = models.IntegerField(choices=LEVEL_CHOICES, default=COMPETENT)
     dateAdded = models.DateField(auto_now=True)
@@ -92,14 +92,17 @@ class Unit(models.Model):
     full = models.CharField(max_length=50, unique=True)
     short = models.CharField(max_length=25, unique=True)
 
+    def __str__(self):
+        return self.full
+
 
 class Ingredient(models.Model):
     name = models.CharField(max_length=150, unique=True)
     imageUrl = models.CharField(max_length=400, blank=True, null=True)
     quantity = models.FloatField(validators=[MinValueValidator(0)])
-    unit = models.CharField(max_length=25)
+    unit = models.ForeignKey(Unit, related_name='ingredient_unit', on_delete=models.CASCADE)
     allowedUnits = models.ManyToManyField(Unit)
-    kcal = models.IntegerField(validators=[MinValueValidator(0)])
+    kcal = models.PositiveIntegerField()
     isActive = models.BooleanField(default=True)
 
     def __str__(self):
@@ -109,17 +112,14 @@ class Ingredient(models.Model):
 class RecipeIngredient(models.Model):
     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
     recipe = models.ForeignKey(Recipe, related_name='ingredients', on_delete=models.CASCADE)
-    quantity = models.FloatField()
-    unit = models.CharField(max_length=25)
+    quantity = models.FloatField(validators=[MinValueValidator(0)])
+    unit = models.ForeignKey(Unit, related_name='recipe_unit', on_delete=models.CASCADE)
 
     class Meta:
         unique_together = (('recipe', 'ingredient'),)
 
     def __str__(self):
-        if self.unit:
-            return self.ingredient.name + ' ' + str(self.quantity) + ' ' + self.unit
-        else:
-            return self.ingredient.name + ' ' + str(self.quantity)
+        return self.ingredient.name + ' ' + str(self.quantity)
 
 
 class Step(models.Model):

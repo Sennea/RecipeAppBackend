@@ -8,13 +8,13 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
     recipe = serializers.PrimaryKeyRelatedField
     ingredient = serializers.PrimaryKeyRelatedField(queryset=Ingredient.objects.all())
 
-    def validate_unit(self, value):
-        unit = Unit.objects.filter(short__exact=value)
-        if Unit.objects.filter(short__exact=value):
-            return unit[0]
-        serializer = UnitPrintSerializer(Unit.objects.all(), many=True)
-        response = {"message": "There is no such unit!", "available units": serializer.data}
-        raise serializers.ValidationError(response)
+    # def validate_unit(self, value):
+    #     unit = Unit.objects.filter(short__exact=value)
+    #     if Unit.objects.filter(short__exact=value):
+    #         return unit[0]
+    #     serializer = UnitPrintSerializer(Unit.objects.all(), many=True)
+    #     response = {"message": "There is no such unit!", "available units": serializer.data}
+    #     raise serializers.ValidationError(response)
 
     class Meta:
         model = RecipeIngredient
@@ -44,13 +44,13 @@ class RecipeIngredientSerializer(serializers.ModelSerializer):
 
 class RecipeIngredientUpdateSerializer(serializers.ModelSerializer):
 
-    def validate_unit(self, value):
-        unit = Unit.objects.filter(short__exact=value)
-        if Unit.objects.filter(short__exact=value):
-            return unit[0]
-        serializer = UnitPrintSerializer(Unit.objects.all(), many=True)
-        response = {"message": "There is no such unit!", "available units": serializer.data}
-        raise serializers.ValidationError(response)
+    # def validate_unit(self, value):
+    #     unit = Unit.objects.filter(short__exact=value)
+    #     if Unit.objects.filter(short__exact=value):
+    #         return unit[0]
+    #     serializer = UnitPrintSerializer(Unit.objects.all(), many=True)
+    #     response = {"message": "There is no such unit!", "available units": serializer.data}
+    #     raise serializers.ValidationError(response)
 
     class Meta:
         model = RecipeIngredient

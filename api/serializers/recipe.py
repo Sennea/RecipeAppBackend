@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from rest_framework import serializers
 
 from api.models import Step, RecipeIngredient, Unit, User, Category, Recipe
@@ -6,21 +6,22 @@ from api.serializers.serializers import CategorySerializer, CommentSerializer
 from api.serializers.unit import UnitPrintSerializer
 
 
-class StepSerializer(serializers.ModelSerializer):
+class StepRecipeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Step
         fields = ['description', 'order', 'imageUrl']
 
 
-class RecipeIngredientSerializer(serializers.ModelSerializer):
+# Only for validation in Recipe
+class RecipeIngredientRecipeSerializer(serializers.ModelSerializer):
 
-    def validate_unit(self, value):
-        unit = Unit.objects.filter(short__exact=value)
-        if Unit.objects.filter(short__exact=value):
-            return unit[0]
-        serializer = UnitPrintSerializer(Unit.objects.all(), many=True)
-        response = {"message": "There is no such unit!", "available units": serializer.data}
-        raise serializers.ValidationError(response)
+    # def validate_unit(self, value):
+    #     unit = Unit.objects.filter(short__exact=value)
+    #     if Unit.objects.filter(short__exact=value):
+    #         return unit[0]
+    #     serializer = UnitPrintSerializer(Unit.objects.all(), many=True)
+    #     response = {"message": "There is no such unit!", "available units": serializer.data}
+    #     raise serializers.ValidationError(response)
 
     class Meta:
         model = RecipeIngredient
@@ -35,7 +36,6 @@ class ChoiceField(serializers.ChoiceField):
         return self._choices[obj]
 
     def to_internal_value(self, data):
-        # To support inserts with the value
         if data == '' and self.allow_blank:
             return ''
 
@@ -48,8 +48,8 @@ class ChoiceField(serializers.ChoiceField):
 
 class RecipeDisplaySerializer(serializers.ModelSerializer):
     categories = CategorySerializer(many=True)
-    steps = StepSerializer(many=True)
-    ingredients = RecipeIngredientSerializer(many=True)
+    steps = StepRecipeSerializer(many=True)
+    ingredients = RecipeIngredientRecipeSerializer(many=True)
     user = serializers.PrimaryKeyRelatedField
     level = ChoiceField(choices=Recipe.LEVEL_CHOICES)
     preparationTimeUnit = ChoiceField(choices=Recipe.PREPARATION_TIME_UNIT_CHOICES)
@@ -64,20 +64,33 @@ class RecipeDisplaySerializer(serializers.ModelSerializer):
 
 
 class RecipeSerializer(serializers.ModelSerializer):
-    user = serializers.PrimaryKeyRelatedField(read_only=True)
-    categories = serializers.PrimaryKeyRelatedField(many=True, queryset=Category.objects.all())
-    steps = StepSerializer(many=True)
-    ingredients = RecipeIngredientSerializer(many=True)
+    # categories = serializers.PrimaryKeyRelatedField(many=True, queryset=Category.objects.all())
+    steps = StepRecipeSerializer(many=True)
+    ingredients = RecipeIngredientRecipeSerializer(many=True)
     level = ChoiceField(choices=Recipe.LEVEL_CHOICES)
     preparationTimeUnit = ChoiceField(choices=Recipe.PREPARATION_TIME_UNIT_CHOICES)
 
     class Meta:
         model = Recipe
-        fields = ['id', 'user', 'title', 'description', 'no_of_rating', 'avg_rating',
+        fields = ['id', 'user_id', 'title', 'description', 'no_of_rating', 'avg_rating',
                   'imageUrl', 'preparationTime', 'preparationTimeUnit',
                   'level', 'dateAdded',
                   'categories', 'steps', 'ingredients']
-        depth = 1
+
+    def validate_steps(self, value):
+        if len(value) == 0:
+            return serializers.ValidationError("This field cannot be empty!")
+        return value
+
+    def validate_ingredients(self, value):
+        if len(value) == 0:
+            return serializers.ValidationError("This field cannot be empty!")
+        return value
+
+    def validate_categories(self, value):
+        if len(value) == 0:
+            return serializers.ValidationError("This field cannot be empty!")
+        return value
 
     def create(self, validated_data):
         steps_data = validated_data.pop('steps')
@@ -86,8 +99,6 @@ class RecipeSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             recipe = Recipe.objects.create(**validated_data)
             recipe.categories.set(categories)
-            for step_data in steps_data:
-                Step.objects.create(recipe=recipe, **step_data)
             for recipe_ingredient_data in recipe_ingredients_data:
                 allowed_ingredient_units = recipe_ingredient_data['ingredient'].allowedUnits.all()
                 recipe_ingredient_unit = recipe_ingredient_data.pop('unit')
@@ -100,6 +111,13 @@ class RecipeSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(response)
                 RecipeIngredient.objects.create(recipe=recipe, unit=recipe_ingredient_unit.short,
                                                 **recipe_ingredient_data)
+            for step_data in steps_data:
+                try:
+                    Step.objects.create(recipe=recipe, **step_data)
+                except IntegrityError as e:
+                    response = {"steps": ["Each recipe step must have a different order field number!"]}
+                    raise serializers.ValidationError(response)
+
             return recipe
 
     def update(self, instance, validated_data):
@@ -132,4 +150,3 @@ class RecipeSerializer(serializers.ModelSerializer):
                     RecipeIngredient.objects.create(recipe=instance, unit=recipe_ingredient_unit.short,
                                                     **recipe_ingredient_data)
             return super(RecipeSerializer, self).update(instance, validated_data)
-
