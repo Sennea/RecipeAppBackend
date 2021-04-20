@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/3.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/3.1/ref/settings/
 """
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -27,6 +28,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+APP_URL = 'http://127.0.0.1:8000/admin/'
 
 # Application definition
 
@@ -75,7 +77,7 @@ ROOT_URLCONF = 'recipes.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')], # <- add this line
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

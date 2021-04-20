@@ -11,9 +11,15 @@ from django.utils.html import format_html
 
 from api.models import Category, Comment, Favorite, Ingredient, Rating, Recipe, RecipeIngredient, Step, Unit, User
 from api.serializers.ingredient import IngredientDisplaySerializer
+from recipes.settings import APP_URL
 
 
 class CustomAdminSite(AdminSite):
+
+    def each_context(self, request):
+        context = super(CustomAdminSite, self).each_context(request)
+        context['APP_URL'] = APP_URL
+        return context
 
     def get_urls(self):
         urls = super().get_urls()
@@ -29,7 +35,6 @@ class CustomAdminSite(AdminSite):
             rci_id = kwargs.get('id')
             try:
                 ingredient = Ingredient.objects.get(id=rci_id)
-                print(ingredient.allowedUnits.all())
                 serializer = IngredientDisplaySerializer(ingredient)
                 return JsonResponse({'ingredient': serializer.data}, status=200)
             except ObjectDoesNotExist:
@@ -40,44 +45,21 @@ class CustomAdminSite(AdminSite):
             return response
 
 
-class RecipeIngredientRecipeAdminForm(ModelForm):
-
-    def clean_unit(self):
-        if self.cleaned_data['unit'] in self.cleaned_data['ingredient'].allowedUnits.all():
-            return self.cleaned_data['unit']
-        raise forms.ValidationError(
-            "This unit is not allowed with this ingredient!"
-        )
-
-    class Media:
-        js = (
-            '//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js',  # jquery
-            'rci_recipe_script.js'
-        )
-
-
 class RecipeIngredientAdminForm(ModelForm):
-    # allowed_units = CharField()
-    #
 
     def clean_unit(self):
-        if self.cleaned_data['unit'] in self.cleaned_data['ingredient'].allowedUnits.all():
+        ingredient = self.cleaned_data.get('ingredient', None)
+        if ingredient is not None and self.cleaned_data['unit'] in ingredient.allowedUnits.all():
             return self.cleaned_data['unit']
         raise forms.ValidationError(
             "This unit is not allowed with this ingredient!"
-        )
-
-    class Media:
-        js = (
-            '//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js',  # jquery
-            'rci_script.js'
         )
 
 
 class RecipeIngredientsInline(admin.TabularInline):
     readonly_fields = ('allowed_units',)
     model = RecipeIngredient
-    form = RecipeIngredientRecipeAdminForm
+    form = RecipeIngredientAdminForm
 
     @admin.display(description='Allowed units')
     def allowed_units(self, instance):

@@ -1,0 +1,105 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+{% block footer %}
+    <div id="footer">{{ APP_URL }}</div>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script type="text/javascript">
+        $(document).ready(function (jQuery) {
+            jQuery(function ($) {
+                $('select').on('change', function (e) {
+                    let changed_id = e.target.id
+                    let single = document.getElementById("id_ingredient");
+                    if (!single) {
+                        let re = new RegExp("id_ingredients-([0-9]+)-ingredient")
+                        if (changed_id.match(re)) {
+                            let id = e.target.value;
+                            let parent = e.target.parentElement.parentElement.parentElement
+                            let unitsField = parent.children[4]
+                            $.ajax({
+                                type: "GET",
+                                url: `{{ APP_URL }}ingredients/${id}/`,
+                                error: function (request, status, error) {
+                                    unitsField.innerHTML = "<p></p>------<p></p"
+                                }
+                            })
+                                .done(function (response) {
+                                    unitsField.innerHTML = "<p></p>" + response.ingredient.allowedUnits.map((o, i) => {
+                                        return i === 0 ? o.full : " " + o.full
+                                    }) + "<p></p>"
+                                })
+                        }
+                    } else {
+                        if (changed_id === 'id_ingredient') {
+
+                            let id = single.value;
+
+                            $.ajax({
+                                type: "GET",
+                                url: `{{ APP_URL }}ingredients/${id}/`,
+                                error: function (request, status, error) {
+                                    document.getElementById('id_allowed_units').innerHTML = "<p></p>------<p></p>"
+                                }
+                            })
+                                .done(function (response) {
+                                    document.getElementById('id_allowed_units').innerHTML = "<p></p>" + response.ingredient.allowedUnits.map((o, i) => {
+                                        return i === 0 ? o.full : " " + o.full
+                                    }) + "<p></p>"
+                                })
+                        }
+                    }
+                });
+            });
+        });
+    </script>
+
+    <!-- Start on document loaded -->
+
+    <script type="text/javascript">
+        $(document).ready(function (jQuery) {
+            let single = document.getElementById("id_ingredient");
+            if (!single) {
+                let re = new RegExp('id_ingredients-([0-9]+)-ingredient')
+                let controls = $('select')
+                    .filter(function () {
+                        return this.id.match(re);
+                    })
+                if (controls.length > 0) {
+                    for (let c of controls) {
+                        let id = c.value;
+                        let parent = c.parentElement.parentElement.parentElement
+                        let unitsField = parent.children[4]
+
+                        $.ajax({
+                            type: "GET",
+                            url: `{{ APP_URL }}ingredients/${id}/`,
+                            error: function (request, status, error) {
+                                unitsField.innerHTML = "<p></p>------<p></p"
+                            }
+                        })
+                            .done(function (response) {
+                                unitsField.innerHTML = "<p></p>" + response.ingredient.allowedUnits.map((o, i) => {
+                                    return i === 0 ? o.full : " " + o.full
+                                }) + "<p></p>"
+                            })
+                    }
+                }
+            } else {
+
+                let id = single.value;
+
+                $.ajax({
+                    type: "GET",
+                    url: `{{ APP_URL }}ingredients/${id}/`,
+                    error: function (request, status, error) {
+                        document.getElementById('id_allowed_units').innerHTML = "<p></p>------<p></p>"
+                    }
+                })
+                    .done(function (response) {
+                        document.getElementById('id_allowed_units').innerHTML = "<p></p>" + response.ingredient.allowedUnits.map((o, i) => {
+                            return i === 0 ? o.full : " " + o.full
+                        }) + "<p></p>"
+                    })
+            }
+        });
+    </script>
+{% endblock %}
