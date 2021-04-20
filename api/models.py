@@ -110,10 +110,15 @@ class Ingredient(models.Model):
 
 
 class RecipeIngredient(models.Model):
-    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
     recipe = models.ForeignKey(Recipe, related_name='ingredients', on_delete=models.CASCADE)
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
     quantity = models.FloatField(validators=[MinValueValidator(0)])
     unit = models.ForeignKey(Unit, related_name='recipe_unit', on_delete=models.CASCADE)
+
+    def allowed_units(self):
+        if self.pk is not None:
+            return list(map(lambda u: u.full, self.ingredient.allowedUnits.all()))
+        return "------"
 
     class Meta:
         unique_together = (('recipe', 'ingredient'),)
