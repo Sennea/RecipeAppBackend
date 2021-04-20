@@ -4,7 +4,7 @@ from django.db import IntegrityError, transaction
 from rest_framework import viewsets, status, mixins, serializers
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import action, authentication_classes, api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet, GenericViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -120,7 +120,7 @@ class UnitViewSet(viewsets.ModelViewSet):
 class IngredientViewSet(viewsets.ModelViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
-    permission_classes = (IsAuthenticatedOrReadOnly, IsAdminOrCreateOrReadOnly)
+    permission_classes = (IsAuthenticated, IsAdminOrCreateOrReadOnly)
 
     def get_serializer_class(self):
         if self.action == 'retrieve' or self.action == 'list':

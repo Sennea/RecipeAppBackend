@@ -4,7 +4,6 @@ $(document).ready(function (jQuery) {
             var e = document.getElementById("id_ingredient");
             var id = e.value;
 
-
             $.ajax({
                 type: "GET",
                 url: `http://127.0.0.1:8000/api/ingredients/${id}/`,
