@@ -42,13 +42,34 @@ class AuthenticationView(ViewSet):
         return Response({'message': 'Successfully logged out!'})
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated, ])
-def get_mine_favourites(request):
-    user = request.user
-    favourites = Favorite.objects.filter(user_id=user.id)
-    serialized = FavoriteSerializer(favourites, many=True)
-    return Response(serialized.data)
+class UserMe(ViewSet):
+    permission_classes(IsAuthenticated, )
+
+    def get_favourites(self, request, *args, **kwargs):
+        user = request.user
+        favourites = Favorite.objects.filter(user_id=user.id)
+        serialized = FavoriteSerializer(favourites, many=True)
+        return Response(serialized.data)
+
+    def get_ratings(self, request, *args, **kwargs):
+        user = request.user
+        ratings = Rating.objects.filter(user_id=user.id)
+        serialized = RatingSerializer(ratings, many=True)
+        return Response(serialized.data)
+
+    def update(self, request, *args, **kwargs):
+        user = request.user
+        serializer = UserSerializer(user, data=request.data, partial=False)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def partial_update(self, request, *args, **kwargs):
+        user = request.user
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -61,6 +82,50 @@ class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
     serializer_class = RecipeSerializer
     permission_classes = (IsAuthenticated, IsOwnerOrCreateOrReadOnly)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        if request.user is not None and request.user.is_anonymous is False:
+            user_favourites = list(map(lambda f: f.recipe, request.user.favourites.all()))
+
+            user_rates = {'stars': [], 'recipes': []}
+            for r in request.user.rates.all():
+                user_rates['stars'].append(r.stars)
+                user_rates['recipes'].append(r.recipe)
+
+            for q in queryset:
+                if q in user_favourites:
+                    q.user_favourite = True
+                if q in user_rates['recipes']:
+                    index = user_rates['recipes'].index(q)
+                    q.user_rating = user_rates['stars'][index]
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        
+        if request.user is not None and request.user.is_anonymous is False:
+            for r in request.user.rates.all():
+                if r.recipe == instance:
+                    instance.user_rating = r.stars
+                    break
+
+            for f in request.user.favourites.all():
+
+                if f.recipe == instance:
+                    instance.user_favourite = True
+                    break
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -228,3 +293,17 @@ class CommentViewSet(mixins.CreateModelMixin,
                 serializer.save(user=self.request.user, recipe=recipe)
         except ObjectDoesNotExist:
             raise serializers.ValidationError('Recipe with id = ' + str(rci_id) + ' dose not exists.')
+
+
+class FavouriteViewSet(mixins.DestroyModelMixin,
+                       GenericViewSet):
+    queryset = Favorite.objects.all()
+    serializer_class = FavoriteSerializer
+    permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)
+
+
+class RatingViewSet(mixins.DestroyModelMixin,
+                    GenericViewSet):
+    queryset = Rating.objects.all()
+    serializer_class = RatingSerializer
+    permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)

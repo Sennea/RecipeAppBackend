@@ -15,14 +15,6 @@ class StepRecipeSerializer(serializers.ModelSerializer):
 # Only for validation in Recipe
 class RecipeIngredientRecipeSerializer(serializers.ModelSerializer):
 
-    # def validate_unit(self, value):
-    #     unit = Unit.objects.filter(short__exact=value)
-    #     if Unit.objects.filter(short__exact=value):
-    #         return unit[0]
-    #     serializer = UnitPrintSerializer(Unit.objects.all(), many=True)
-    #     response = {"message": "There is no such unit!", "available units": serializer.data}
-    #     raise serializers.ValidationError(response)
-
     class Meta:
         model = RecipeIngredient
         fields = ['ingredient', 'unit', 'quantity']
@@ -54,10 +46,13 @@ class RecipeDisplaySerializer(serializers.ModelSerializer):
     level = ChoiceField(choices=Recipe.LEVEL_CHOICES)
     preparationTimeUnit = ChoiceField(choices=Recipe.PREPARATION_TIME_UNIT_CHOICES)
     comments = CommentSerializer(many=True)
+    user_favourite = serializers.BooleanField(read_only=True)
+    user_rating = serializers.IntegerField(min_value=0, max_value=5, read_only=True)
 
     class Meta:
         model = Recipe
         fields = ['id', 'user', 'title', 'description', 'no_of_rating', 'avg_rating',
+                  'user_favourite', 'user_rating',
                   'imageUrl', 'preparationTime', 'preparationTimeUnit',
                   'level', 'dateAdded',
                   'categories', 'steps', 'ingredients', 'comments']
@@ -109,7 +104,7 @@ class RecipeSerializer(serializers.ModelSerializer):
                                            str(recipe_ingredient_data['ingredient'].id) + "!",
                                 "allowed units": serializer.data}
                     raise serializers.ValidationError(response)
-                RecipeIngredient.objects.create(recipe=recipe, unit=recipe_ingredient_unit.short,
+                RecipeIngredient.objects.create(recipe=recipe, unit=recipe_ingredient_unit,
                                                 **recipe_ingredient_data)
             for step_data in steps_data:
                 try:
@@ -147,6 +142,6 @@ class RecipeSerializer(serializers.ModelSerializer):
                                                str(recipe_ingredient_data['ingredient'].id) + "!",
                                     "allowed units": serializer.data}
                         raise serializers.ValidationError(response)
-                    RecipeIngredient.objects.create(recipe=instance, unit=recipe_ingredient_unit.short,
+                    RecipeIngredient.objects.create(recipe=instance, unit=recipe_ingredient_unit,
                                                     **recipe_ingredient_data)
             return super(RecipeSerializer, self).update(instance, validated_data)
