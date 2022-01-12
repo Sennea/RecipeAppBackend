@@ -66,5 +66,6 @@ urlpatterns = [
     path('auth/logout/', AuthenticationView.as_view({'post': 'logout'}), name='logout'),
     path('auth/login/', AuthenticationView.as_view({'post': 'login'}), name='login'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/recaptcha/', AuthenticationView.as_view({'post': 'recaptcha'}), name='recaptcha'),
 
 ]

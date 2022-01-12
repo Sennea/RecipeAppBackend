@@ -8,6 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet, GenericViewSet
 from rest_framework_simplejwt.tokens import RefreshToken
+import requests
+from django.conf import settings
 
 from api.models import Category, Comment, Favorite, Ingredient, Rating, Recipe, RecipeIngredient, Step, \
     User, Unit
@@ -20,10 +22,13 @@ from api.serializers.serializers import FavoriteSerializer, RatingSerializer, Ca
     CommentSerializer, StepCreateSerializer
 from api.serializers.unit import UnitSerializer
 from api.serializers.user import UserSerializer
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+import json
 
 
 class AuthenticationView(ViewSet):
-    permission_classes = (IsAuthenticated,)
+    # permission_classes = (IsAuthenticated,)
 
     @authentication_classes([BasicAuthentication, ])
     def login(self, request, *args, **kwargs):
@@ -40,6 +45,27 @@ class AuthenticationView(ViewSet):
     def logout(self, request, *args, **kwargs):
         django_logout(request)
         return Response({'message': 'Successfully logged out!'})
+
+    def recaptcha(self, request):
+        body = json.loads(request.body)
+        token = body['recaptchaToken']
+        res = {}
+        url = "https://www.google.com/recaptcha/api/siteverify"
+        params = {
+            'secret': '6LcN5NodAAAAAEbV6c3mcWlCjelPQcFQUbWry0er',
+            'response': token,
+        }
+        if token is None:
+            res = {
+                'message': 'Wrong reCaptcha token!',
+            }
+            return Response(res, status=status.HTTP_201_CREATED)
+
+        reacaptcha_response = requests.get(url, params=params, verify=True)
+        reacaptcha_response = reacaptcha_response.json()
+        res["status"] = reacaptcha_response.get("success", False)
+        res['message'] = reacaptcha_response.get('error-codes', None) or "Unspecified error."
+        return Response(res)
 
 
 class UserMe(ViewSet):
@@ -76,12 +102,28 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = (IsAdminOrIsOwnerOrSingup,)
+    
+    def create(self, request, *args, **kwargs):
+        try:
+            validate_password(request.data.get('password'))
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except ValidationError as e:
+            print(e)
+            res = {
+                'errors': e
+            }
+            return Response(res, status=status.HTTP_400_BAD_REQUEST)
 
 
 class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
     serializer_class = RecipeSerializer
-    permission_classes = (IsAuthenticated, IsOwnerOrCreateOrReadOnly)
+    permission_classes = (IsOwnerOrCreateOrReadOnly, )
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
@@ -173,19 +215,19 @@ class RecipeViewSet(viewsets.ModelViewSet):
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
-    permission_classes = (IsAuthenticated, IsAdminOrReadOnly)
+    permission_classes = (IsAdminOrReadOnly, )
 
 
 class UnitViewSet(viewsets.ModelViewSet):
     queryset = Unit.objects.all()
     serializer_class = UnitSerializer
-    permission_classes = (IsAuthenticated, IsAdminOrReadOnly)
+    permission_classes = (IsAdminOrReadOnly, )
 
 
 class IngredientViewSet(viewsets.ModelViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
-    permission_classes = (IsAuthenticated, IsAdminOrCreateOrReadOnly)
+    permission_classes = (IsAdminOrCreateOrReadOnly, )
 
     def get_serializer_class(self):
         if self.action == 'retrieve' or self.action == 'list':
@@ -200,7 +242,7 @@ class RecipeIngredientViewSet(mixins.CreateModelMixin,
                               GenericViewSet):
     queryset = RecipeIngredient.objects.all()
     serializer_class = RecipeIngredientSerializer
-    permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)
+    permission_classes = (IsOwnerRecipeOrCreateOrReadOnly, )
 
     def get_serializer_class(self):
         if self.action == 'update' or self.action == 'partial_update':
@@ -242,7 +284,7 @@ class StepViewSet(mixins.CreateModelMixin,
                   GenericViewSet):
     queryset = Step.objects.all()
     serializer_class = StepSerializer
-    permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)
+    permission_classes = (IsOwnerRecipeOrCreateOrReadOnly, )
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -283,7 +325,7 @@ class CommentViewSet(mixins.CreateModelMixin,
                      GenericViewSet):
     queryset = Comment.objects.all()
     serializer_class = CommentSerializer
-    permission_classes = (IsAuthenticated, IsOwnerOrCreateOrReadOnly)
+    permission_classes = (IsOwnerOrCreateOrReadOnly, )
 
     def perform_create(self, serializer):
         rci_id = self.kwargs.get('pk')
@@ -299,11 +341,11 @@ class FavouriteViewSet(mixins.DestroyModelMixin,
                        GenericViewSet):
     queryset = Favorite.objects.all()
     serializer_class = FavoriteSerializer
-    permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)
+    permission_classes = (IsOwnerRecipeOrCreateOrReadOnly, )
 
 
 class RatingViewSet(mixins.DestroyModelMixin,
                     GenericViewSet):
     queryset = Rating.objects.all()
     serializer_class = RatingSerializer
-    permission_classes = (IsAuthenticated, IsOwnerRecipeOrCreateOrReadOnly)
+    permission_classes = (IsOwnerRecipeOrCreateOrReadOnly, )
